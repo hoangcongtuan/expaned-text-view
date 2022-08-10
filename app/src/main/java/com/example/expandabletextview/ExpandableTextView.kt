@@ -1,7 +1,12 @@
 package com.example.expandabletextview
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.text.LineBreaker
+import android.os.Build
+import android.os.Build.VERSION_CODES.ECLAIR_MR1
 import android.text.Layout
 import android.text.Spannable
 import android.text.SpannableString
@@ -16,6 +21,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.core.view.doOnPreDraw
 import androidx.core.view.isVisible
 import com.example.expandabletextview.databinding.ViewExpandableTextBinding
@@ -30,6 +36,8 @@ class ExpandableTextView : LinearLayout {
         binding.textView.apply {
             movementMethod = LinkMovementMethod.getInstance();
             highlightColor = Color.TRANSPARENT;
+            /*if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                justificationMode = LineBreaker.JUSTIFICATION_MODE_INTER_WORD*/
         }
         orientation = LinearLayout.VERTICAL
         updateUI()
@@ -37,6 +45,8 @@ class ExpandableTextView : LinearLayout {
         binding.btnCollapse.setOnClickListener {
             collapse()
         }
+
+        setWillNotDraw(false)
     }
 
     private val MAX_LINE_COUNT = 5
@@ -58,22 +68,72 @@ class ExpandableTextView : LinearLayout {
         originalText = text
         doOnPreDraw {
             var tempText = text
-            var addReadMore: String
+            var addReadMore: String = tempText + READ_MORE_STRING
             val start = System.currentTimeMillis()
+            var left = 0
+            var right = addReadMore.length
+            var mid = (left + right) / 2
+            var status = 0
+            var cutPoint = 0
             while (true) {
                 addReadMore = tempText + READ_MORE_STRING
-                staticLayout = StaticLayout(
+                staticLayout = /*if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    StaticLayout.Builder.obtain(
+                        addReadMore,
+                        0,
+                        addReadMore.length,
+                        textPaint,
+                        measuredWidth
+                    )
+                        .setLineSpacing(
+                            binding.textView.lineSpacingMultiplier,
+                            binding.textView.lineSpacingExtra
+                        )
+                        .setIncludePad(binding.textView.includeFontPadding)
+                        .setJustificationMode(LineBreaker.JUSTIFICATION_MODE_INTER_WORD)
+                        .build()
+                } else*/ StaticLayout(
                     addReadMore, 0, addReadMore.length, textPaint,
                     measuredWidth,
                     Layout.Alignment.ALIGN_NORMAL,
-                    1f, 0f, false
-                )
+                    binding.textView.lineSpacingMultiplier, binding.textView.lineSpacingExtra,
+                    binding.textView.includeFontPadding
+                ).apply {
+                }
 
-                if (staticLayout!!.lineCount > MAX_LINE_COUNT)
-                    tempText = tempText.substring(0, tempText.length - 1)
+                val bitmap = Bitmap.createBitmap(staticLayout?.width!!, staticLayout?.height!!, Bitmap.Config.RGB_565)
+                val canvas = Canvas(bitmap)
+                canvas.drawColor(Color.WHITE)
+                staticLayout?.draw(canvas)
 
-                if (staticLayout!!.lineCount <= MAX_LINE_COUNT)
-                    break
+                if (staticLayout!!.lineCount > MAX_LINE_COUNT && status == 0) {
+                    val temp = right
+                    right = mid
+                    mid = (left + temp) / 2
+                    tempText = text.substring(0, mid)
+                } else if (staticLayout!!.lineCount < MAX_LINE_COUNT && status == 0) {
+                    left = mid
+                    mid = (mid + right) / 2
+                    tempText = text.substring(0, mid)
+                } else {
+                    if (status != 1) {
+                        status = 1
+                        cutPoint = mid
+                        continue
+                    }
+                    if (staticLayout!!.lineCount > MAX_LINE_COUNT) {
+                        --cutPoint
+                        tempText = text.substring(0, cutPoint)
+                        addReadMore = tempText + READ_MORE_STRING
+                        break
+                    } else {
+                        cutPoint += 1
+                        tempText = text.substring(0, cutPoint)
+                    }
+                }
+
+                /* if (staticLayout!!.lineCount <= MAX_LINE_COUNT)
+                     break*/
             }
             Log.d("ExpandableTextView", "time=${System.currentTimeMillis() - start}")
             spannableString = SpannableString(addReadMore)
@@ -100,7 +160,7 @@ class ExpandableTextView : LinearLayout {
                 Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
             )
             binding.textView.setText(spannableString)
-            /*invalidate()*/
+            invalidate()
         }
     }
 
@@ -121,8 +181,8 @@ class ExpandableTextView : LinearLayout {
     }
 
 
-    /* override fun onDraw(canvas: Canvas?) {
+     override fun onDraw(canvas: Canvas?) {
          super.onDraw(canvas)
          staticLayout?.draw(canvas)
-     }*/
+     }
 }
